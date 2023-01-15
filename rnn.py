@@ -117,6 +117,9 @@ e,f=loadData()
 to,td=tokenize(e[:10]+f[:10])
 td_inverse={v: k for k, v in td.items()}
 pto=pad(to)
+pairs=[]
+for i in range(0,len(to),2):
+    pairs.append((to[i],to[i+1]))
 
 h_dim=80
 vocab=sorted(list(td.keys()))
@@ -124,9 +127,11 @@ vocab_size=len(td.keys())
 max_len=10
 
 #Initialise parameters
-ht=np.random.uniform(0,1,(h_dim,1))
-xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1))
+ht=np.random.uniform(0,1,(h_dim,1)) #Hidden units at time t
+xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
+#Weight matrices for encoder and decoder
 wx_enc,wx_dec,wh_enc,wh_dec,wy=np.random.uniform(0, 1, (h_dim,vocab_size)),np.random.uniform(0, 1, (h_dim,vocab_size)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (vocab_size,h_dim))
+#Biases for encoder and decoder
 bh_enc,bh_dec,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(vocab_size,1))
 
 c=encodeSentence(to[0],wx_enc,wh_enc,bh_enc)
