@@ -7,14 +7,26 @@ import random
 
 #Preprocess
 
-def loadData():
-    with open('small_vocab_en.txt','rt') as f:
-        english_sentences=f.read().split('\n')
-        f.close()
-    with open('small_vocab_fr.txt','rt') as f:
-        french_sentences=f.read().split('\n')
-        f.close()
-    return (english_sentences,french_sentences)
+def loadData(dataset):
+    if dataset=='translate':
+        with open('small_vocab_en.txt','rt') as f:
+            english_sentences=f.read().split('\n')
+            f.close()
+        with open('small_vocab_fr.txt','rt') as f:
+            french_sentences=f.read().split('\n')
+            f.close()
+        return (english_sentences,french_sentences)
+    elif dataset=='english':
+        with open('small_vocab_en.txt','rt') as f:
+            english_sentences=f.read().split('\n')
+            f.close()
+        return (english_sentences,None)
+    elif dataset=='sine':
+        x=list(range(200))
+        y=np.sin(x)
+        return (x,y)
+    else:
+        return (None,None)
 
 def tokenize(data):
     token_dict=dict()
@@ -72,6 +84,15 @@ def softmaxDerivative(x):
     dv=u.transpose()[0]
     return (np.multiply(v,du)-np.multiply(u,dv))/v**2
 
+def mse(x,y):
+    s=0
+    for i in range(len(x)):
+        s+=(x[i]-y[i])**2
+    return s/len(x)
+
+def mseGradient(x,y): #dL/dX (w.r.t predicted)
+    return [[2*(x[i]-y[i])/len(x) for i in range(len(x))]]
+
 def rnn_hidden(xt,wx,wh,ht,bh,act=rectLinear):
     h=wx.dot(xt)+wh.dot(ht)+bh
     h=np.array(act(h),dtype=float)
@@ -87,6 +108,11 @@ def training(data,encoder_params,decoder_params):
         pass
 
 oneHot=lambda i,l: [1 if _==i else 0 for _ in range(l)]
+
+def rnnPass(x,h,wh,wy,bh,by):
+    ht=rnn_hidden(x,wx,wh,h,bh)
+    yt=rnn_output(h,wy,by)
+    return (ht,yt)
 
 def encodeSentence(sentence,wx,wh,bh):
     ht=np.zeros((h_dim,1))
@@ -111,28 +137,64 @@ def detokenize(tokens,td):
         sentence.append(td[i.argmax()])
     return sentence
 
+def backpropThroughTime(x,y,wh,wx,wy):
+    pass
+
 #Initialise data
 
-e,f=loadData()
-to,td=tokenize(e[:10]+f[:10])
-td_inverse={v: k for k, v in td.items()}
-pto=pad(to)
-pairs=[]
-for i in range(0,len(to),2):
-    pairs.append((to[i],to[i+1]))
-
+data='english'
+x,y=loadData(data)
+if data=='translate':
+    to,td=tokenize(x[:10]+y[:10])
+    td_inverse={v: k for k, v in td.items()}
+    pto=pad(to)
+    vocab=sorted(list(td.keys()))
+    vocab_size=len(td.keys())
+    max_len=10
+    x_dim=vocab_size
+    pairs=[]
+    for i in range(0,len(to),2):
+        pairs.append((pto[i],pto[i+1]))
+elif data=='english':
+    to,td=tokenize(x)
+    td_inverse={v: k for k, v in td.items()}
+    pto=pad(to)
+    vocab=sorted(list(td.keys()))
+    vocab_size=len(td.keys())
+    max_len=10
+    x_dim=vocab_size
+elif data=='sine':
+    pairs=[]
+    for i in range(len(x)):
+        pairs.append((x[i],y[i]))
+    x_dim=1
 h_dim=80
-vocab=sorted(list(td.keys()))
-vocab_size=len(td.keys())
-max_len=10
 
 #Initialise parameters
-ht=np.random.uniform(0,1,(h_dim,1)) #Hidden units at time t
-xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
-#Weight matrices for encoder and decoder
-wx_enc,wx_dec,wh_enc,wh_dec,wy=np.random.uniform(0, 1, (h_dim,vocab_size)),np.random.uniform(0, 1, (h_dim,vocab_size)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (vocab_size,h_dim))
-#Biases for encoder and decoder
-bh_enc,bh_dec,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(vocab_size,1))
+ht=np.zeros((h_dim,1)) #Hidden units at time t
+if data=='translate':
+    xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
+    #Weight matrices for encoder and decoder
+    wx_enc,wx_dec,wh_enc,wh_dec,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+    #Biases for encoder and decoder
+    bh_enc,bh_dec,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+elif data=='english':
+    xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1))
+    wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+    bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+    t=0
+    xt=np.array(oneHot(pto[0][t],vocab_size)).reshape((vocab_size,1))
+    yt=np.array(oneHot(pto[0][t+1],vocab_size)).reshape((vocab_size,1))
+    
+    ht,y_=rnnPass(xt,ht,wh,wy,bh,by)
+    l=crossEntropy(y_,yt)
+elif data=='sine':
+    xt=x[0]
+    wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+    bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+    ht,y_=rnnPass(x[0],ht,wh,wy,bh,by)
+    l=mse([y_],[y[0]])
 
-c=encodeSentence(to[0],wx_enc,wh_enc,bh_enc)
-d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
+#c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
+#d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
+
