@@ -52,6 +52,8 @@ def pad(data):
 
 #Define model
 
+#Create tanh functions
+
 def rectLinear(xx):
     x=np.array(xx,dtype=float)
     for i in range(len(x)):
@@ -109,9 +111,9 @@ def training(data,encoder_params,decoder_params):
 
 oneHot=lambda i,l: [1 if _==i else 0 for _ in range(l)]
 
-def rnnPass(x,h,wh,wy,bh,by):
-    ht=rnn_hidden(x,wx,wh,h,bh)
-    yt=rnn_output(h,wy,by)
+def rnnPass(x,h,wh,wy,bh,by,hidden_act=rectLinear,out_act=softmax):
+    ht=rnn_hidden(x,wx,wh,h,bh,act=hidden_act)
+    yt=rnn_output(h,wy,by,act=out_act)
     return (ht,yt)
 
 def encodeSentence(sentence,wx,wh,bh):
@@ -142,7 +144,7 @@ def backpropThroughTime(x,y,wh,wx,wy):
 
 #Initialise data
 
-data='english'
+data='sine'
 x,y=loadData(data)
 if data=='translate':
     to,td=tokenize(x[:10]+y[:10])
@@ -171,7 +173,7 @@ elif data=='sine':
 h_dim=80
 
 #Initialise parameters
-ht=np.zeros((h_dim,1)) #Hidden units at time t
+h=[np.zeros((h_dim,1))] #Hidden units at time t
 if data=='translate':
     xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
     #Weight matrices for encoder and decoder
@@ -188,12 +190,23 @@ elif data=='english':
     
     ht,y_=rnnPass(xt,ht,wh,wy,bh,by)
     l=crossEntropy(y_,yt)
+    dldy_=crossEntropyGradient(y_,yt)
 elif data=='sine':
-    xt=x[0]
+    T=3
+    y_=[]
+    L=[]
+    dLdy_=[]
+    dy_dwy=0
     wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
     bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
-    ht,y_=rnnPass(x[0],ht,wh,wy,bh,by)
-    l=mse([y_],[y[0]])
+    #Forward pass
+    for t in range(T):
+        ht,y_new=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
+        L.append(mse([y_new],[y[t]]))
+        dLdy_.append(mseGradient([y_new],[y[t]]))
+        h.append(ht)
+        y_.append(y_new)
+    #dldy_=mseGradient([y_],[y[0]])
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
 #d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
