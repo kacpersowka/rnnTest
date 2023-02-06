@@ -52,7 +52,13 @@ def pad(data):
 
 #Define model
 
-#Create tanh functions
+def tanh(xx):
+    x=np.array(xx,dtype=float)
+    return np.tanh(x)
+    
+def tanhDerivative(xx):
+    x=np.array(xx,dtype=float)
+    return np.diag((1-np.tanh(x)**2).reshape((len(x))))
 
 def rectLinear(xx):
     x=np.array(xx,dtype=float)
@@ -64,7 +70,7 @@ def rectLinearDerivative(xx):
     x=np.array(xx,dtype=float)
     for i in range(len(x)):
             x[i]=int(x[i]>0) #apply activation function
-    return np.diag(x)
+    return np.diag(x.reshape((len(x))))
     
 def crossEntropy(q,p):
     z=np.array(q,dtype=float)+1e-7 #For numerical stability
@@ -81,9 +87,9 @@ def softmax(x):
 def softmaxDerivative(x):
     z=np.array(x,dtype=float)-max(x)
     v=np.sum(np.exp(z), axis=0)
-    u=np.array([np.exp(z)]).transpose()
-    du=np.diag(u.transpose()[0])
-    dv=u.transpose()[0]
+    u=np.exp(z)
+    du=np.diag(u.reshape(len(x)))
+    dv=u.reshape(len(x))
     return (np.multiply(v,du)-np.multiply(u,dv))/v**2
 
 def mse(x,y):
@@ -104,6 +110,15 @@ def rnn_output(ht,wy,by,act=softmax):
     y=wy.dot(ht)+by
     y=np.array(act(y),dtype=float)
     return y
+
+def rnn_output_derivative(ht,wy,by,actDer=softmaxDerivative):
+    x=wy.dot(ht)+by #y=act(x)
+    dydx=np.array(actDer(y),dtype=float) #Get proper jacobians from actDer
+    #Should write down the derivation of these
+    dxdw=np.array([ht.reshape((len(ht))) for _ in x])
+    dxdb=np.diag([1 for _ in x])
+    dxdh=wy
+    return (dydx.dot(dxdw),dydx.dot(dxdb),dydx.dot(dxdh)) #dy/dwy, dy/db, dy/dh
 
 def training(data,encoder_params,decoder_params):
     for eng,fr in data:
@@ -144,7 +159,7 @@ def backpropThroughTime(x,y,wh,wx,wy):
 
 #Initialise data
 
-data='sine'
+data='english'
 x,y=loadData(data)
 if data=='translate':
     to,td=tokenize(x[:10]+y[:10])
@@ -173,7 +188,8 @@ elif data=='sine':
 h_dim=80
 
 #Initialise parameters
-h=[np.zeros((h_dim,1))] #Hidden units at time t
+h=[np.zeros((h_dim,1))]
+ht=h[0] #Hidden units at time t
 if data=='translate':
     xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
     #Weight matrices for encoder and decoder
