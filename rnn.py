@@ -101,10 +101,20 @@ def mse(x,y):
 def mseGradient(x,y): #dL/dX (w.r.t predicted)
     return [[2*(x[i]-y[i])/len(x) for i in range(len(x))]]
 
-def rnn_hidden(xt,wx,wh,ht,bh,act=rectLinear):
-    h=wx.dot(xt)+wh.dot(ht)+bh
-    h=np.array(act(h),dtype=float)
+def rnn_hidden(xt,wx,wh,ht,bh,act=tanh):
+    a=wx.dot(xt)+wh.dot(ht)+bh
+    h=np.array(act(a),dtype=float)
     return h
+    
+def rnn_hidden_derivative(xt,wx,wh,ht,bh,actDer=tanhDerivative):
+    a=wx.dot(xt)+wh.dot(ht)+bh
+    dhda=np.array(actDer(a),dtype=float) #h=act(a), dhda=act'(a)
+    dadwx=np.array([xt.reshape((len(xt))) for _ in a])
+    dadwh=np.array([ht.reshape((len(ht))) for _ in a])
+    dadb=np.array([1 for _ in a])
+    dadh=wh
+    dadx=wx
+    return (dhda.dot(dadwh),dhda.dot(dadwx),dhda.dot(dadb),dhda.dot(dadh),dhda.dot(dadx)) #dht/dwh, dht/dwx, dht/db, dht/dht-1, dht/dxt
     
 def rnn_output(ht,wy,by,act=softmax):
     y=wy.dot(ht)+by
@@ -112,13 +122,13 @@ def rnn_output(ht,wy,by,act=softmax):
     return y
 
 def rnn_output_derivative(ht,wy,by,actDer=softmaxDerivative):
-    x=wy.dot(ht)+by #y=act(x)
-    dydx=np.array(actDer(y),dtype=float) #Get proper jacobians from actDer
+    a=wy.dot(ht)+by #y=act(a)
+    dyda=np.array(actDer(a),dtype=float) #Get proper jacobians from actDer
     #Should write down the derivation of these
-    dxdw=np.array([ht.reshape((len(ht))) for _ in x])
-    dxdb=np.diag([1 for _ in x])
-    dxdh=wy
-    return (dydx.dot(dxdw),dydx.dot(dxdb),dydx.dot(dxdh)) #dy/dwy, dy/db, dy/dh
+    dadw=np.array([ht.reshape((len(ht))) for _ in a])
+    dadb=np.array([1 for _ in a])
+    dadh=wy
+    return (dyda.dot(dadw),dyda.dot(dadb),dyda.dot(dadh)) #dy/dwy, dy/db, dy/dh
 
 def training(data,encoder_params,decoder_params):
     for eng,fr in data:
@@ -159,7 +169,7 @@ def backpropThroughTime(x,y,wh,wx,wy):
 
 #Initialise data
 
-data='english'
+data='sine'
 x,y=loadData(data)
 if data=='translate':
     to,td=tokenize(x[:10]+y[:10])
