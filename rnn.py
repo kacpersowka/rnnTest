@@ -219,20 +219,31 @@ elif data=='english':
     dldy_=crossEntropyGradient(y_,yt)
 elif data=='sine':
     T=3
-    y_=[]
+    YPred=[]
     L=[]
-    dLdy_=[]
-    dy_dwy=0
+    Dht_Dht_1=[] #dh1_dh0, dh2_dh1, dh3_dh2 ....
+    Dht_Dwh=[] #dh1_dwh, dh2_dwh, dh3_dwh ....
+    dyPred_dwy=0
     wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
     bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
     #Forward pass
     for t in range(T):
-        ht,y_new=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
-        L.append(mse([y_new],[y[t]]))
-        dLdy_.append(mseGradient([y_new],[y[t]]))
+        ht,yPred=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
+        L.append(mse([yPred],[y[t]]))
+        dL_dyPred=mseGradient([yPred],[y[t]])
+        dyPred_dwy,dyPred_dbt,dyPred_dht=rnn_output_derivative(ht,wy,by,actDer=tanhDerivative)
+        dht_dwh, dht_dwx, dht_dbt, dht_dht_1, dht_dxt=rnn_hidden_derivative(xt,wx,wh,ht,bh,actDer=tanhDerivative)
+        Dht_Dht_1.append(dht_dht_1)
+        Dht_Dwh.append(dht_dwh)
+        #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc
+        dht_dwh=0
+        for i in range(len(h)-1):
+            dh=1
+            for j in range(i-1):
+                dh*=Dht_Dht_1[-j]
+            dht_dwh+=Dht_Dwh[-i]*dh
         h.append(ht)
-        y_.append(y_new)
-    #dldy_=mseGradient([y_],[y[0]])
+        YPred.append(yPred)
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
 #d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
