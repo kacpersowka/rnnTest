@@ -22,8 +22,9 @@ def loadData(dataset):
             f.close()
         return (english_sentences,None)
     elif dataset=='sine':
-        x=np.array([[[_]] for _ in range(360)])
-        y=np.sin(x)
+        x=np.array([[[_]] for _ in range(0,360,5)])
+        xx=np.array([[[_*(np.pi/180)]] for _ in range(0,360,5)])
+        y=np.sin(xx)
         return (x,y)
     else:
         return (None,None)
