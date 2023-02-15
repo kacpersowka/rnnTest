@@ -22,7 +22,7 @@ def loadData(dataset):
             f.close()
         return (english_sentences,None)
     elif dataset=='sine':
-        x=list(range(200))
+        x=np.array([[[_]] for _ in range(360)])
         y=np.sin(x)
         return (x,y)
     else:
@@ -106,15 +106,15 @@ def rnn_hidden(xt,wx,wh,ht,bh,act=tanh):
     h=np.array(act(a),dtype=float)
     return h
     
-def rnn_hidden_derivative(xt,wx,wh,ht,bh,actDer=tanhDerivative):
-    a=wx.dot(xt)+wh.dot(ht)+bh
-    dhda=np.array(actDer(a),dtype=float) #h=act(a), dhda=act'(a)
+def rnn_hidden_derivative(xt,wx,wh,ht_1,bh,actDer=tanhDerivative):
+    a=wx.dot(xt)+wh.dot(ht_1)+bh
+    dhtda=np.array(actDer(a),dtype=float) #h=act(a), dhtda=act'(a)
     dadwx=np.array([xt.reshape((len(xt))) for _ in a])
-    dadwh=np.array([ht.reshape((len(ht))) for _ in a])
+    dadwh=np.array([ht_1.reshape((len(ht_1))) for _ in a])
     dadb=np.array([1 for _ in a])
     dadh=wh
     dadx=wx
-    return (dhda.dot(dadwh),dhda.dot(dadwx),dhda.dot(dadb),dhda.dot(dadh),dhda.dot(dadx)) #dht/dwh, dht/dwx, dht/db, dht/dht-1, dht/dxt
+    return (dhtda.dot(dadwh),dhtda.dot(dadwx),dhtda.dot(dadb),dhtda.dot(dadh),dhtda.dot(dadx)) #dht/dwh, dht/dwx, dht/db, dht/dht-1, dht/dxt
     
 def rnn_output(ht,wy,by,act=softmax):
     y=wy.dot(ht)+by
@@ -218,32 +218,73 @@ elif data=='english':
     l=crossEntropy(y_,yt)
     dldy_=crossEntropyGradient(y_,yt)
 elif data=='sine':
-    T=3
-    YPred=[]
-    L=[]
-    Dht_Dht_1=[] #dh1_dh0, dh2_dh1, dh3_dh2 ....
-    Dht_Dwh=[] #dh1_dwh, dh2_dwh, dh3_dwh ....
-    dyPred_dwy=0
+    lr=1e-3
+    epochs=10
+    T=16
     wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
     bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
     #Forward pass
-    for t in range(T):
-        ht,yPred=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
-        L.append(mse([yPred],[y[t]]))
-        dL_dyPred=mseGradient([yPred],[y[t]])
-        dyPred_dwy,dyPred_dbt,dyPred_dht=rnn_output_derivative(ht,wy,by,actDer=tanhDerivative)
-        dht_dwh, dht_dwx, dht_dbt, dht_dht_1, dht_dxt=rnn_hidden_derivative(xt,wx,wh,ht,bh,actDer=tanhDerivative)
-        Dht_Dht_1.append(dht_dht_1)
-        Dht_Dwh.append(dht_dwh)
-        #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc
-        dht_dwh=0
-        for i in range(len(h)-1):
-            dh=1
-            for j in range(i-1):
-                dh*=Dht_Dht_1[-j]
-            dht_dwh+=Dht_Dwh[-i]*dh
-        h.append(ht)
-        YPred.append(yPred)
+    for epoch in range(epochs):
+        h=[np.zeros((h_dim,1))]
+        YPred=[]
+        Lt=[]
+        Dfht_Dht_1=[] #df(h0)_dh0, df(h1)_dh1, df(h2)_dh2 ....
+        Dfht_Dwh=[] #df(h0)_dwh, df(h1)_dwh, df(h2)_dwh ....
+        Dfht_Dbh=[] #df(h0)_dbh, df(h1)_dbh, df(h2)_dbh ....
+        Dfht_Dwx=[] #df(h0)_dwx, df(h1)_dwx, df(h2)_dwx ....
+        DLt_Dwh=[]
+        DLt_Dbh=[]
+        DLt_Dby=[]
+        DLt_Dwy=[]
+        DLt_Dwx=[]
+        print('Epoch',epoch+1,'out of',epochs)
+        print('Running for',T,'timesteps...')
+        for t in range(T):
+            ht_new,yPred=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
+            Lt.append(mse([yPred],[y[t]]))
+            dLt_dyPredt=mseGradient([yPred],[y[t]])
+            dyPredt_dwy,dyPredt_dby,dyPredt_dht=rnn_output_derivative(h[t],wy,by,actDer=tanhDerivative)
+            DLt_Dwy.append(np.dot(dLt_dyPredt,dyPredt_dwy))
+            DLt_Dby.append(np.dot(dLt_dyPredt,dyPredt_dby))
+            dLt_dht=np.dot(dLt_dyPredt,dyPredt_dht)
+            dfht_dwh, dfht_dwx, dfht_dbh, dfht_dht_1, dht_dxt=rnn_hidden_derivative(x[t],wx,wh,h[t],bh,actDer=tanhDerivative)
+            Dfht_Dht_1.append(dfht_dht_1)
+            Dfht_Dwh.append(dfht_dwh)
+            Dfht_Dwx.append(dfht_dwx)
+            Dfht_Dbh.append(dfht_dbh)
+            #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
+            dht_dwh=0
+            dht_dbh=0
+            dht_dwx=0
+            for i in range(len(h)):
+                dh=1
+                for j in range(i-1): #Incorporate truncation?
+                    dh=np.dot(dh,Dfht_Dht_1[-j])
+                dht_dwh+=np.dot(dh,Dfht_Dwh[-i])
+                dht_dbh+=np.dot(dh,Dfht_Dbh[-i])
+                dht_dwx+=np.dot(dh,Dfht_Dwx[-i])
+            DLt_Dwh.append(dLt_dht.dot(dht_dwh))
+            DLt_Dbh.append(dLt_dht.dot(dht_dbh))
+            DLt_Dwx.append(dLt_dht.dot(dht_dwx))
+            h.append(ht_new)
+            YPred.append(yPred)
+        L=sum(Lt)/T
+        print('Predictions:',YPred)
+        print('Actual:',list(y)[:T])
+        print('Loss:',L)
+        DL_Dwh=sum(DLt_Dwh)/T
+        DL_Dbh=sum(DLt_Dbh)/T
+        DL_Dwx=sum(DLt_Dwx)/T
+        DL_Dwy=sum(DLt_Dwy)/T
+        DL_Dby=sum(DLt_Dby)/T
+        print('Updating weights...')
+        print(wh.shape)
+        print(DL_Dwh.shape)
+        wh=wh-lr*DL_Dwh
+        wy=wh-lr*DL_Dwy
+        wx=wh-lr*DL_Dwx
+        bh=wh-lr*DL_Dbh
+        by=wh-lr*DL_Dby
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
 #d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
