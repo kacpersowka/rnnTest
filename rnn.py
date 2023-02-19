@@ -100,7 +100,7 @@ def mse(x,y):
     return s/len(x)
 
 def mseGradient(x,y): #dL/dX (w.r.t predicted)
-    return [[2*(x[i]-y[i])/len(x) for i in range(len(x))]]
+    return np.array([2*(x[i]-y[i])/len(x) for i in range(len(x))])
 
 def rnn_hidden(xt,wx,wh,ht,bh,act=tanh):
     a=wx.dot(xt)+wh.dot(ht)+bh
@@ -112,7 +112,7 @@ def rnn_hidden_derivative(xt,wx,wh,ht_1,bh,actDer=tanhDerivative):
     dhtda=np.array(actDer(a),dtype=float) #h=act(a), dhtda=act'(a)
     dadwx=np.array([xt.reshape((len(xt))) for _ in a])
     dadwh=np.array([ht_1.reshape((len(ht_1))) for _ in a])
-    dadb=np.array([1 for _ in a])
+    dadb=np.diag([1 for _ in a])
     dadh=wh
     dadx=wx
     return (dhtda.dot(dadwh),dhtda.dot(dadwx),dhtda.dot(dadb),dhtda.dot(dadh),dhtda.dot(dadx)) #dht/dwh, dht/dwx, dht/db, dht/dht-1, dht/dxt
@@ -127,7 +127,7 @@ def rnn_output_derivative(ht,wy,by,actDer=softmaxDerivative):
     dyda=np.array(actDer(a),dtype=float) #Get proper jacobians from actDer
     #Should write down the derivation of these
     dadw=np.array([ht.reshape((len(ht))) for _ in a])
-    dadb=np.array([1 for _ in a])
+    dadb=np.diag([1 for _ in a])
     dadh=wy
     return (dyda.dot(dadw),dyda.dot(dadb),dyda.dot(dadh)) #dy/dwy, dy/db, dy/dh
 
@@ -137,7 +137,7 @@ def training(data,encoder_params,decoder_params):
 
 oneHot=lambda i,l: [1 if _==i else 0 for _ in range(l)]
 
-def rnnPass(x,h,wh,wy,bh,by,hidden_act=rectLinear,out_act=softmax):
+def rnnPass(x,h,wh,wy,wx,bh,by,hidden_act=rectLinear,out_act=softmax):
     ht=rnn_hidden(x,wx,wh,h,bh,act=hidden_act)
     yt=rnn_output(h,wy,by,act=out_act)
     return (ht,yt)
@@ -198,94 +198,98 @@ elif data=='sine':
     x_dim=1
 h_dim=80
 
-#Initialise parameters
-h=[np.zeros((h_dim,1))]
-ht=h[0] #Hidden units at time t
-if data=='translate':
-    xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
-    #Weight matrices for encoder and decoder
-    wx_enc,wx_dec,wh_enc,wh_dec,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
-    #Biases for encoder and decoder
-    bh_enc,bh_dec,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
-elif data=='english':
-    xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1))
-    wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
-    bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
-    t=0
-    xt=np.array(oneHot(pto[0][t],vocab_size)).reshape((vocab_size,1))
-    yt=np.array(oneHot(pto[0][t+1],vocab_size)).reshape((vocab_size,1))
-    
-    ht,y_=rnnPass(xt,ht,wh,wy,bh,by)
-    l=crossEntropy(y_,yt)
-    dldy_=crossEntropyGradient(y_,yt)
-elif data=='sine':
-    lr=1e-3
-    epochs=10
-    T=16
-    wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
-    bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
-    #Forward pass
-    for epoch in range(epochs):
-        h=[np.zeros((h_dim,1))]
-        YPred=[]
-        Lt=[]
-        Dfht_Dht_1=[] #df(h0)_dh0, df(h1)_dh1, df(h2)_dh2 ....
-        Dfht_Dwh=[] #df(h0)_dwh, df(h1)_dwh, df(h2)_dwh ....
-        Dfht_Dbh=[] #df(h0)_dbh, df(h1)_dbh, df(h2)_dbh ....
-        Dfht_Dwx=[] #df(h0)_dwx, df(h1)_dwx, df(h2)_dwx ....
-        DLt_Dwh=[]
-        DLt_Dbh=[]
-        DLt_Dby=[]
-        DLt_Dwy=[]
-        DLt_Dwx=[]
-        print('Epoch',epoch+1,'out of',epochs)
-        print('Running for',T,'timesteps...')
-        for t in range(T):
-            ht_new,yPred=rnnPass(x[t],h[t],wh,wy,bh,by,tanh,tanh)
-            Lt.append(mse([yPred],[y[t]]))
-            dLt_dyPredt=mseGradient([yPred],[y[t]])
-            dyPredt_dwy,dyPredt_dby,dyPredt_dht=rnn_output_derivative(h[t],wy,by,actDer=tanhDerivative)
-            DLt_Dwy.append(np.dot(dLt_dyPredt,dyPredt_dwy))
-            DLt_Dby.append(np.dot(dLt_dyPredt,dyPredt_dby))
-            dLt_dht=np.dot(dLt_dyPredt,dyPredt_dht)
-            dfht_dwh, dfht_dwx, dfht_dbh, dfht_dht_1, dht_dxt=rnn_hidden_derivative(x[t],wx,wh,h[t],bh,actDer=tanhDerivative)
-            Dfht_Dht_1.append(dfht_dht_1)
-            Dfht_Dwh.append(dfht_dwh)
-            Dfht_Dwx.append(dfht_dwx)
-            Dfht_Dbh.append(dfht_dbh)
-            #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
-            dht_dwh=0
-            dht_dbh=0
-            dht_dwx=0
-            for i in range(len(h)):
-                dh=1
-                for j in range(i-1): #Incorporate truncation?
-                    dh=np.dot(dh,Dfht_Dht_1[-j])
-                dht_dwh+=np.dot(dh,Dfht_Dwh[-i])
-                dht_dbh+=np.dot(dh,Dfht_Dbh[-i])
-                dht_dwx+=np.dot(dh,Dfht_Dwx[-i])
-            DLt_Dwh.append(dLt_dht.dot(dht_dwh))
-            DLt_Dbh.append(dLt_dht.dot(dht_dbh))
-            DLt_Dwx.append(dLt_dht.dot(dht_dwx))
-            h.append(ht_new)
-            YPred.append(yPred)
-        L=sum(Lt)/T
-        print('Predictions:',YPred)
-        print('Actual:',list(y)[:T])
-        print('Loss:',L)
-        DL_Dwh=sum(DLt_Dwh)/T
-        DL_Dbh=sum(DLt_Dbh)/T
-        DL_Dwx=sum(DLt_Dwx)/T
-        DL_Dwy=sum(DLt_Dwy)/T
-        DL_Dby=sum(DLt_Dby)/T
-        print('Updating weights...')
-        print(wh.shape)
-        print(DL_Dwh.shape)
-        wh=wh-lr*DL_Dwh
-        wy=wh-lr*DL_Dwy
-        wx=wh-lr*DL_Dwx
-        bh=wh-lr*DL_Dbh
-        by=wh-lr*DL_Dby
+if 1:
+    #Initialise parameters
+    h=[np.zeros((h_dim,1))]
+    ht=h[0] #Hidden units at time t
+    if data=='translate':
+        xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1)) #Input word at time t (one-hot vector)
+        #Weight matrices for encoder and decoder
+        wx_enc,wx_dec,wh_enc,wh_dec,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+        #Biases for encoder and decoder
+        bh_enc,bh_dec,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+    elif data=='english':
+        xt=np.array(oneHot(random.randint(0,vocab_size-1),vocab_size)).reshape((vocab_size,1))
+        wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+        bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+        t=0
+        xt=np.array(oneHot(pto[0][t],vocab_size)).reshape((vocab_size,1))
+        yt=np.array(oneHot(pto[0][t+1],vocab_size)).reshape((vocab_size,1))
+        
+        ht,y_=rnnPass(xt,ht,wh,wy,wx,bh,by)
+        l=crossEntropy(y_,yt)
+        dldy_=crossEntropyGradient(y_,yt)
+    elif data=='sine':
+        lr=1e-3
+        epochs=1
+        T=1
+        wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
+        bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+        #Forward pass
+        for epoch in range(epochs):
+            h=[np.zeros((h_dim,1))]
+            YPred=[]
+            Lt=[]
+            Dfht_Dht_1=[] #df(h0)_dh0, df(h1)_dh1, df(h2)_dh2 ....
+            Dfht_Dwh=[] #df(h0)_dwh, df(h1)_dwh, df(h2)_dwh ....
+            Dfht_Dbh=[] #df(h0)_dbh, df(h1)_dbh, df(h2)_dbh ....
+            Dfht_Dwx=[] #df(h0)_dwx, df(h1)_dwx, df(h2)_dwx ....
+            DLt_Dwh=[]
+            DLt_Dbh=[]
+            DLt_Dby=[]
+            DLt_Dwy=[]
+            DLt_Dwx=[]
+            print('Epoch',epoch+1,'out of',epochs)
+            print('Running for',T,'timesteps...')
+            for t in range(T):
+                ht_new,yPred=rnnPass(x[t],h[t],wh,wy,wx,bh,by,tanh,tanh)
+                Lt.append(mse(yPred,y[t]))
+                dLt_dyPredt=mseGradient(yPred,y[t])
+                dyPredt_dwy,dyPredt_dby,dyPredt_dht=rnn_output_derivative(h[t],wy,by,actDer=tanhDerivative)
+                DLt_Dwy.append(np.dot(dLt_dyPredt,dyPredt_dwy))
+                DLt_Dby.append(np.dot(dLt_dyPredt,dyPredt_dby))
+                dLt_dht=np.dot(dLt_dyPredt,dyPredt_dht)
+                dfht_dwh, dfht_dwx, dfht_dbh, dfht_dht_1, dht_dxt=rnn_hidden_derivative(x[t],wx,wh,h[t],bh,actDer=tanhDerivative)
+                Dfht_Dht_1.append(dfht_dht_1)
+                Dfht_Dwh.append(dfht_dwh)
+                Dfht_Dwx.append(dfht_dwx)
+                Dfht_Dbh.append(dfht_dbh)
+                #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
+                dht_dwh=0
+                dht_dbh=0
+                dht_dwx=0
+                for i in range(len(h)):
+                    dh=1
+                    for j in range(i-1): #Incorporate truncation?
+                        dh=np.dot(dh,Dfht_Dht_1[-j])
+                    dht_dwh+=np.multiply(dh,Dfht_Dwh[-i])
+                    dht_dbh+=np.multiply(dh,Dfht_Dbh[-i])
+                    dht_dwx+=np.multiply(dh,Dfht_Dwx[-i])
+                DLt_Dwh.append(np.multiply(dLt_dht.transpose(),dht_dwh))
+                DLt_Dbh.append(np.multiply(dLt_dht.transpose(),np.diag(dht_dbh).reshape(h_dim,1)))
+                DLt_Dwx.append(np.multiply(dLt_dht.transpose(),dht_dwx))
+                h.append(ht_new)
+                YPred.append(yPred)
+            L=sum(Lt)/T
+            print('Predictions:',YPred)
+            print('Actual:',list(y)[:T])
+            print('Loss:',L)
+            DL_Dwh=sum(DLt_Dwh)/T
+            DL_Dbh=sum(DLt_Dbh)/T
+            DL_Dwx=sum(DLt_Dwx)/T
+            DL_Dwy=sum(DLt_Dwy)/T
+            DL_Dby=sum(DLt_Dby)/T
+            print('Updating weights...')
+            print(wh.shape,DL_Dwh.shape) #figure out dw dimensions
+            print(wy.shape,DL_Dwy.shape)
+            print(wx.shape,DL_Dwx.shape)
+            print(bh.shape,DL_Dbh.shape)
+            print(by.shape,DL_Dby.shape)
+            """wh=wh-lr*DL_Dwh
+            wy=wh-lr*DL_Dwy
+            wx=wh-lr*DL_Dwx
+            bh=wh-lr*DL_Dbh
+            by=wh-lr*DL_Dby"""
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
 #d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
