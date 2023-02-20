@@ -4,6 +4,7 @@ Adapted from https://towardsdatascience.com/language-translation-with-rnns-d84d4
 
 import numpy as np
 import random
+import matplotlib.pyplot as plt
 
 #Preprocess
 
@@ -221,8 +222,10 @@ if 1:
         dldy_=crossEntropyGradient(y_,yt)
     elif data=='sine':
         lr=1e-3
-        epochs=1
-        T=1
+        losses=[]
+        verbose=False
+        epochs=200
+        T=16
         wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
         bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
         #Forward pass
@@ -239,8 +242,9 @@ if 1:
             DLt_Dby=[]
             DLt_Dwy=[]
             DLt_Dwx=[]
-            print('Epoch',epoch+1,'out of',epochs)
-            print('Running for',T,'timesteps...')
+            if verbose:
+                print('Epoch',epoch+1,'out of',epochs)
+                print('Running for',T,'timesteps...')
             for t in range(T):
                 ht_new,yPred=rnnPass(x[t],h[t],wh,wy,wx,bh,by,tanh,tanh)
                 Lt.append(mse(yPred,y[t]))
@@ -255,41 +259,50 @@ if 1:
                 Dfht_Dwx.append(dfht_dwx)
                 Dfht_Dbh.append(dfht_dbh)
                 #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
-                dht_dwh=0
-                dht_dbh=0
-                dht_dwx=0
+                dlt_dwh=0
+                dlt_dbh=0
+                dlt_dwx=0
                 for i in range(len(h)):
                     dh=1
-                    for j in range(i-1): #Incorporate truncation?
+                    for j in range(i): #Incorporate truncation?
                         dh=np.dot(dh,Dfht_Dht_1[-j])
-                    dht_dwh+=np.multiply(dh,Dfht_Dwh[-i])
-                    dht_dbh+=np.multiply(dh,Dfht_Dbh[-i])
-                    dht_dwx+=np.multiply(dh,Dfht_Dwx[-i])
-                DLt_Dwh.append(np.multiply(dLt_dht.transpose(),dht_dwh))
-                DLt_Dbh.append(np.multiply(dLt_dht.transpose(),np.diag(dht_dbh).reshape(h_dim,1)))
-                DLt_Dwx.append(np.multiply(dLt_dht.transpose(),dht_dwx))
+                    #Need to consider the role of dot product and incorporating weights not accounted for previously
+                    dlt_dwh+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dwh[-i]))
+                    dlt_dbh+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dbh[-i]))
+                    dlt_dwx+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dwx[-i]))
+                DLt_Dwh.append(dlt_dwh)
+                DLt_Dbh.append(dlt_dbh)
+                DLt_Dwx.append(dlt_dwx)
                 h.append(ht_new)
-                YPred.append(yPred)
+                YPred.append(yPred[0][0])
             L=sum(Lt)/T
-            print('Predictions:',YPred)
-            print('Actual:',list(y)[:T])
-            print('Loss:',L)
+            if verbose:
+                print('Predictions:',YPred)
+                print('Actual:',[_[0][0] for _ in list(y)[:T]])
+                print('Loss:',L)
+            losses.append(L[0])
             DL_Dwh=sum(DLt_Dwh)/T
-            DL_Dbh=sum(DLt_Dbh)/T
+            DL_Dbh=np.diag(sum(DLt_Dbh)/T).reshape((h_dim,1))
             DL_Dwx=sum(DLt_Dwx)/T
             DL_Dwy=sum(DLt_Dwy)/T
-            DL_Dby=sum(DLt_Dby)/T
-            print('Updating weights...')
-            print(wh.shape,DL_Dwh.shape) #figure out dw dimensions
+            DL_Dby=np.diag(sum(DLt_Dby)/T).reshape((x_dim,1))
+            if verbose:
+                print('Updating weights...')
+            """print(wh.shape,DL_Dwh.shape)
             print(wy.shape,DL_Dwy.shape)
             print(wx.shape,DL_Dwx.shape)
             print(bh.shape,DL_Dbh.shape)
-            print(by.shape,DL_Dby.shape)
-            """wh=wh-lr*DL_Dwh
-            wy=wh-lr*DL_Dwy
-            wx=wh-lr*DL_Dwx
-            bh=wh-lr*DL_Dbh
-            by=wh-lr*DL_Dby"""
+            print(by.shape,DL_Dby.shape)"""
+            wh=wh-lr*DL_Dwh
+            wy=wy-lr*DL_Dwy
+            wx=wx-lr*DL_Dwx
+            bh=bh-lr*DL_Dbh
+            by=by-lr*DL_Dby
+            print('Epoch: ',epoch+1,'/',epochs,' Loss: ',losses[-1],' '*20,sep='',end='\r',flush=True)
+        print()
+        print('Done')
+        plt.plot(losses)
+        plt.show()
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
 #d=decodeSentence(c,wx_dec,wh_dec,bh_dec,wy,by)
