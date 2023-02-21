@@ -167,8 +167,82 @@ def detokenize(tokens,td):
         sentence.append(td[i.argmax()])
     return sentence
 
-def backpropThroughTime(x,y,wh,wx,wy):
-    pass
+def backpropThroughTime(x,y,wh,wx,wy,bh,by,epochs=1,lr=1,verbose=False,T=None,outAct=tanh,hiddenAct=tanh,outDer=tanhDerivative,hiddenDer=tanhDerivative):
+    if type(T)==type(None):
+        T=len(x)
+    losses=[]
+    for epoch in range(epochs):
+        h=[np.zeros((h_dim,1))]
+        YPred=[]
+        Lt=[]
+        Dfht_Dht_1=[] #df(h0)_dh0, df(h1)_dh1, df(h2)_dh2 ....
+        Dfht_Dwh=[] #df(h0)_dwh, df(h1)_dwh, df(h2)_dwh ....
+        Dfht_Dbh=[] #df(h0)_dbh, df(h1)_dbh, df(h2)_dbh ....
+        Dfht_Dwx=[] #df(h0)_dwx, df(h1)_dwx, df(h2)_dwx ....
+        DLt_Dwh=[]
+        DLt_Dbh=[]
+        DLt_Dby=[]
+        DLt_Dwy=[]
+        DLt_Dwx=[]
+        if verbose:
+            print('Epoch',epoch+1,'out of',epochs)
+            print('Running for',T,'timesteps...')
+        for t in range(T):
+            ht_new,yPred=rnnPass(x[t],h[t],wh,wy,wx,bh,by,hiddenAct,outAct)
+            Lt.append(mse(yPred,y[t]))
+            dLt_dyPredt=mseGradient(yPred,y[t])
+            dyPredt_dwy,dyPredt_dby,dyPredt_dht=rnn_output_derivative(h[t],wy,by,actDer=outDer)
+            DLt_Dwy.append(np.dot(dLt_dyPredt,dyPredt_dwy))
+            DLt_Dby.append(np.dot(dLt_dyPredt,dyPredt_dby))
+            dLt_dht=np.dot(dLt_dyPredt,dyPredt_dht)
+            dfht_dwh, dfht_dwx, dfht_dbh, dfht_dht_1, dht_dxt=rnn_hidden_derivative(x[t],wx,wh,h[t],bh,actDer=hiddenDer)
+            Dfht_Dht_1.append(dfht_dht_1)
+            Dfht_Dwh.append(dfht_dwh)
+            Dfht_Dwx.append(dfht_dwx)
+            Dfht_Dbh.append(dfht_dbh)
+            #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
+            dlt_dwh=0
+            dlt_dbh=0
+            dlt_dwx=0
+            for i in range(len(h)):
+                dh=1
+                for j in range(i): #Incorporate truncation?
+                    dh=np.dot(dh,Dfht_Dht_1[-j])
+                #Need to consider the role of dot product and incorporating weights not accounted for previously
+                dlt_dht_1=dLt_dht.dot(dh)
+                dlt_dwh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwh[-i])
+                dlt_dbh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dbh[-i])
+                dlt_dwx+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwx[-i])
+            DLt_Dwh.append(dlt_dwh)
+            DLt_Dbh.append(dlt_dbh)
+            DLt_Dwx.append(dlt_dwx)
+            h.append(ht_new)
+            YPred.append(yPred[0][0])
+        L=sum(Lt)/T
+        if verbose:
+            print('Predictions:',YPred)
+            print('Actual:',[_[0][0] for _ in list(y)[:T]])
+            print('Loss:',L)
+        losses.append(L[0])
+        DL_Dwh=sum(DLt_Dwh)/T
+        DL_Dbh=np.diag(sum(DLt_Dbh)/T).reshape((h_dim,1))
+        DL_Dwx=sum(DLt_Dwx)/T
+        DL_Dwy=sum(DLt_Dwy)/T
+        DL_Dby=np.diag(sum(DLt_Dby)/T).reshape((x_dim,1))
+        if verbose:
+            print('Updating weights...')
+        """print(wh.shape,DL_Dwh.shape)
+        print(wy.shape,DL_Dwy.shape)
+        print(wx.shape,DL_Dwx.shape)
+        print(bh.shape,DL_Dbh.shape)
+        print(by.shape,DL_Dby.shape)"""
+        wh=wh-lr*DL_Dwh
+        wy=wy-lr*DL_Dwy
+        wx=wx-lr*DL_Dwx
+        bh=bh-lr*DL_Dbh
+        by=by-lr*DL_Dby
+        print('Epoch: ',epoch+1,'/',epochs,' Loss: ',losses[-1],' '*20,sep='',end='\r',flush=True)
+    return {'context':h,'losses':losses,'yPred':yPred}
 
 #Initialise data
 
@@ -222,90 +296,15 @@ if 1:
         l=crossEntropy(y_,yt)
         dldy_=crossEntropyGradient(y_,yt)
     elif data=='sine':
-        lr=1e-2
         losses=[]
         verbose=False
-        epochs=1000
-        T=len(x)
         wx,wh,wy=np.random.uniform(-1, 1, (h_dim,x_dim)),np.random.uniform(-1, 1, (h_dim,h_dim)),np.random.uniform(-1, 1, (x_dim,h_dim))
         bh,by=np.random.uniform(-1,1,(h_dim,1)),np.random.uniform(-1,1,(x_dim,1))
-        #Forward pass
-        for epoch in range(epochs):
-            h=[np.zeros((h_dim,1))]
-            YPred=[]
-            Lt=[]
-            Dfht_Dht_1=[] #df(h0)_dh0, df(h1)_dh1, df(h2)_dh2 ....
-            Dfht_Dwh=[] #df(h0)_dwh, df(h1)_dwh, df(h2)_dwh ....
-            Dfht_Dbh=[] #df(h0)_dbh, df(h1)_dbh, df(h2)_dbh ....
-            Dfht_Dwx=[] #df(h0)_dwx, df(h1)_dwx, df(h2)_dwx ....
-            DLt_Dwh=[]
-            DLt_Dbh=[]
-            DLt_Dby=[]
-            DLt_Dwy=[]
-            DLt_Dwx=[]
-            if verbose:
-                print('Epoch',epoch+1,'out of',epochs)
-                print('Running for',T,'timesteps...')
-            for t in range(T):
-                ht_new,yPred=rnnPass(x[t],h[t],wh,wy,wx,bh,by,tanh,tanh)
-                Lt.append(mse(yPred,y[t]))
-                dLt_dyPredt=mseGradient(yPred,y[t])
-                dyPredt_dwy,dyPredt_dby,dyPredt_dht=rnn_output_derivative(h[t],wy,by,actDer=tanhDerivative)
-                DLt_Dwy.append(np.dot(dLt_dyPredt,dyPredt_dwy))
-                DLt_Dby.append(np.dot(dLt_dyPredt,dyPredt_dby))
-                dLt_dht=np.dot(dLt_dyPredt,dyPredt_dht)
-                dfht_dwh, dfht_dwx, dfht_dbh, dfht_dht_1, dht_dxt=rnn_hidden_derivative(x[t],wx,wh,h[t],bh,actDer=tanhDerivative)
-                Dfht_Dht_1.append(dfht_dht_1)
-                Dfht_Dwh.append(dfht_dwh)
-                Dfht_Dwx.append(dfht_dwx)
-                Dfht_Dbh.append(dfht_dbh)
-                #To get dht_dwh you need to incorporate ht-1, ht-2 etc etc, truncate?
-                dlt_dwh=0
-                dlt_dbh=0
-                dlt_dwx=0
-                for i in range(len(h)):
-                    dh=1
-                    for j in range(i): #Incorporate truncation?
-                        dh=np.dot(dh,Dfht_Dht_1[-j])
-                    #Need to consider the role of dot product and incorporating weights not accounted for previously
-                    dlt_dht_1=dLt_dht.dot(dh)
-                    dlt_dwh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwh[-i])
-                    dlt_dbh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dbh[-i])
-                    dlt_dwx+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwx[-i])
-                DLt_Dwh.append(dlt_dwh)
-                DLt_Dbh.append(dlt_dbh)
-                DLt_Dwx.append(dlt_dwx)
-                h.append(ht_new)
-                YPred.append(yPred[0][0])
-            L=sum(Lt)/T
-            if verbose:
-                print('Predictions:',YPred)
-                print('Actual:',[_[0][0] for _ in list(y)[:T]])
-                print('Loss:',L)
-            losses.append(L[0])
-            DL_Dwh=sum(DLt_Dwh)/T
-            DL_Dbh=np.diag(sum(DLt_Dbh)/T).reshape((h_dim,1))
-            DL_Dwx=sum(DLt_Dwx)/T
-            DL_Dwy=sum(DLt_Dwy)/T
-            DL_Dby=np.diag(sum(DLt_Dby)/T).reshape((x_dim,1))
-            if verbose:
-                print('Updating weights...')
-            """print(wh.shape,DL_Dwh.shape)
-            print(wy.shape,DL_Dwy.shape)
-            print(wx.shape,DL_Dwx.shape)
-            print(bh.shape,DL_Dbh.shape)
-            print(by.shape,DL_Dby.shape)"""
-            wh=wh-lr*DL_Dwh
-            wy=wy-lr*DL_Dwy
-            wx=wx-lr*DL_Dwx
-            bh=bh-lr*DL_Dbh
-            by=by-lr*DL_Dby
-            print('Epoch: ',epoch+1,'/',epochs,' Loss: ',losses[-1],' '*20,sep='',end='\r',flush=True)
+        out=backpropThroughTime(x,y,wh,wx,wy,bh,by,epochs=1000,lr=1e-2,verbose=False,T=None,outAct=tanh,hiddenAct=tanh,outDer=tanhDerivative,hiddenDer=tanhDerivative)
         print()
         print('Done')
-        print(h[-1])
-        plt.plot([_[0][0] for _ in list(y)[:T]],label='Actual')
-        plt.plot(YPred,label='Predicted')
+        print(out['context'][-1])
+        plt.plot(out['losses'],label='Loss')
         plt.legend()
         plt.show()
 
