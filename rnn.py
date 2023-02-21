@@ -23,8 +23,9 @@ def loadData(dataset):
             f.close()
         return (english_sentences,None)
     elif dataset=='sine':
-        x=np.array([[[_]] for _ in range(0,360,5)])
-        xx=np.array([[[_*(np.pi/180)]] for _ in range(0,360,5)])
+        #x=np.array([[[_]] for _ in range(0,360,5)])
+        xx=np.array([[[_*(np.pi/180)]] for _ in range(0,360,20)])
+        x=np.array([[[0]] for _ in range(0,360,20)])
         y=np.sin(xx)
         return (x,y)
     else:
@@ -197,7 +198,7 @@ elif data=='sine':
     for i in range(len(x)):
         pairs.append((x[i],y[i]))
     x_dim=1
-h_dim=80
+h_dim=16
 
 if 1:
     #Initialise parameters
@@ -221,13 +222,13 @@ if 1:
         l=crossEntropy(y_,yt)
         dldy_=crossEntropyGradient(y_,yt)
     elif data=='sine':
-        lr=1e-3
+        lr=1e-2
         losses=[]
         verbose=False
-        epochs=200
-        T=16
-        wx,wh,wy=np.random.uniform(0, 1, (h_dim,x_dim)),np.random.uniform(0, 1, (h_dim,h_dim)),np.random.uniform(0, 1, (x_dim,h_dim))
-        bh,by=np.random.uniform(0,1,(h_dim,1)),np.random.uniform(0,1,(x_dim,1))
+        epochs=1000
+        T=len(x)
+        wx,wh,wy=np.random.uniform(-1, 1, (h_dim,x_dim)),np.random.uniform(-1, 1, (h_dim,h_dim)),np.random.uniform(-1, 1, (x_dim,h_dim))
+        bh,by=np.random.uniform(-1,1,(h_dim,1)),np.random.uniform(-1,1,(x_dim,1))
         #Forward pass
         for epoch in range(epochs):
             h=[np.zeros((h_dim,1))]
@@ -267,9 +268,10 @@ if 1:
                     for j in range(i): #Incorporate truncation?
                         dh=np.dot(dh,Dfht_Dht_1[-j])
                     #Need to consider the role of dot product and incorporating weights not accounted for previously
-                    dlt_dwh+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dwh[-i]))
-                    dlt_dbh+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dbh[-i]))
-                    dlt_dwx+=np.multiply(dLt_dht.transpose(),np.dot(dh,Dfht_Dwx[-i]))
+                    dlt_dht_1=dLt_dht.dot(dh)
+                    dlt_dwh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwh[-i])
+                    dlt_dbh+=np.multiply(dlt_dht_1.transpose(),Dfht_Dbh[-i])
+                    dlt_dwx+=np.multiply(dlt_dht_1.transpose(),Dfht_Dwx[-i])
                 DLt_Dwh.append(dlt_dwh)
                 DLt_Dbh.append(dlt_dbh)
                 DLt_Dwx.append(dlt_dwx)
@@ -301,7 +303,10 @@ if 1:
             print('Epoch: ',epoch+1,'/',epochs,' Loss: ',losses[-1],' '*20,sep='',end='\r',flush=True)
         print()
         print('Done')
-        plt.plot(losses)
+        print(h[-1])
+        plt.plot([_[0][0] for _ in list(y)[:T]],label='Actual')
+        plt.plot(YPred,label='Predicted')
+        plt.legend()
         plt.show()
 
 #c=encodeSentence(pairs[0][0],wx_enc,wh_enc,bh_enc)
